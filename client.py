@@ -1,5 +1,6 @@
 import random
 import threading
+import time
 from typing import Any, List
 
 from labrpc.labrpc import ClientEnd
@@ -13,7 +14,10 @@ class Clerk:
         self.servers = servers
         self.cfg = cfg
 
-        # Your definitions here.
+        self.client_id = nrand()
+        self.request_id = 0
+
+        self.server = self.servers[0]
 
     # Fetch the current value for a key.
     # Returns "" if the key does not exist.
@@ -27,8 +31,17 @@ class Clerk:
     # must match the declared types of the RPC handler function's
     # arguments in server.py.
     def get(self, key: str) -> str:
-        # You will have to modify this function.
-        return ""
+        self.request_id += 1
+
+        args = GetArgs(key, self.client_id, self.request_id)
+        
+        while True:
+            try:
+                reply = self.server.call("KVServer.Get", args)
+                return reply.value
+            except TimeoutError:
+                time.sleep(0.5)
+                continue
 
     # Shared by Put and Append.
     #
@@ -40,8 +53,17 @@ class Clerk:
     # must match the declared types of the RPC handler function's
     # arguments in server.py.
     def put_append(self, key: str, value: str, op: str) -> str:
-        # You will have to modify this function.
-        return ""
+        self.request_id += 1
+
+        args = PutAppendArgs(key, value, self.client_id, self.request_id)
+        
+        while True:
+            try:
+                reply = self.server.call("KVServer." + op, args)
+                return reply.value
+            except TimeoutError:
+                time.sleep(0.5)
+                continue
 
     def put(self, key: str, value: str):
         self.put_append(key, value, "Put")
