@@ -17,7 +17,15 @@ class Clerk:
         self.client_id = nrand()
         self.request_id = 0
 
-        self.server = self.servers[0]
+        self.nshards = self.cfg.nservers
+
+        self.shard_leaders = [i for i in range(self.nshards)]
+
+    def key_to_shard(self, key):
+        try:
+            return int(key) % self.nshards
+        except (ValueError, TypeError):
+            return hash(key) % self.nshards
 
     # Fetch the current value for a key.
     # Returns "" if the key does not exist.
@@ -34,14 +42,26 @@ class Clerk:
         self.request_id += 1
 
         args = GetArgs(key, self.client_id, self.request_id)
+
+        shard = self.key_to_shard(key)
+
+        s_i = self.shard_leaders[shard]
         
         while True:
+            server_to_try = self.servers[s_i]
             try:
-                reply = self.server.call("KVServer.Get", args)
-                return reply.value
+                reply = server_to_try.call("KVServer.Get", args)
+                if reply.error is None or reply.error == "":
+                    self.shard_leaders[shard] = s_i
+                    return reply.value
+                elif reply.error == "Wrong Group":
+                    pass
+
             except TimeoutError:
-                time.sleep(0.5)
-                continue
+                pass
+
+            s_i = (s_i + 1) % len(self.servers)
+            time.sleep(0.1)
 
     # Shared by Put and Append.
     #
@@ -56,14 +76,26 @@ class Clerk:
         self.request_id += 1
 
         args = PutAppendArgs(key, value, self.client_id, self.request_id)
+
+        shard = self.key_to_shard(key)
+
+        s_i = self.shard_leaders[shard]
         
         while True:
+            server_to_try = self.servers[s_i]
             try:
-                reply = self.server.call("KVServer." + op, args)
-                return reply.value
+                reply = server_to_try.call("KVServer." + op, args)
+                if reply.error is None or reply.error == "":
+                    self.shard_leaders[shard] = s_i
+                    return reply.value
+                elif reply.error == "Wrong Group":
+                    pass
+
             except TimeoutError:
-                time.sleep(0.5)
-                continue
+                pass
+            
+            s_i = (s_i + 1) % len(self.servers)
+            time.sleep(0.1)
 
     def put(self, key: str, value: str):
         self.put_append(key, value, "Put")
